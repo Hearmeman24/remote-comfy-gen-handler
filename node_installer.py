@@ -120,6 +120,25 @@ def _get_fallback_node_map() -> dict:
         return {}
 
 
+def _build_fallback_node_to_repo() -> dict[str, str]:
+    """Build class_type → git URL from the live GitHub extension-node-map.
+
+    The Manager DB baked into the image goes stale between rebuilds, so a node
+    registered after the last image build is absent from it. This live map is
+    fetched fresh (1h cache) and covers those newer nodes.
+    """
+    raw_map = _get_fallback_node_map()
+    node_to_repo: dict[str, str] = {}
+    for repo_url, info in raw_map.items():
+        if not isinstance(info, list) or len(info) == 0:
+            continue
+        nodes = info[0] if isinstance(info[0], list) else []
+        for n in nodes:
+            if n not in node_to_repo:
+                node_to_repo[n] = repo_url
+    return node_to_repo
+
+
 def _build_node_to_repo(mappings: dict, pack_stars: dict) -> dict[str, str]:
     """Build a class_type → repo lookup, picking the most popular repo on conflict.
 
@@ -349,18 +368,23 @@ def ensure_nodes(workflow: dict, max_retries: int = 3, progress_fn=None) -> list
             if git_url:
                 resolved_repos[git_url] = types
         repos = resolved_repos
+
+        # Supplement with the live GitHub map for anything the (image-baked,
+        # possibly stale) Manager DB couldn't resolve — e.g. a node registered
+        # after the last image build.
+        resolved_now = {t for types in repos.values() for t in types}
+        still_missing = missing - resolved_now
+        if still_missing:
+            print(f"[node_installer] {len(still_missing)} type(s) unresolved by Manager, "
+                  f"trying live extension-node-map", flush=True)
+            fallback_map = _build_fallback_node_to_repo()
+            node_to_repo = {**fallback_map, **node_to_repo}  # Manager wins on overlap
+            for repo_url, types in resolve_repos(still_missing, fallback_map).items():
+                repos.setdefault(repo_url, []).extend(types)
     else:
         # Fallback: raw extension-node-map (no preemptions, no star ranking)
         print("[node_installer] Falling back to raw extension-node-map", flush=True)
-        raw_map = _get_fallback_node_map()
-        node_to_repo = {}
-        for repo_url, info in raw_map.items():
-            if not isinstance(info, list) or len(info) == 0:
-                continue
-            nodes = info[0] if isinstance(info[0], list) else []
-            for n in nodes:
-                if n not in node_to_repo:
-                    node_to_repo[n] = repo_url
+        node_to_repo = _build_fallback_node_to_repo()
         repos = resolve_repos(missing, node_to_repo)
 
     if not repos:
