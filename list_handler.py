@@ -50,24 +50,31 @@ def _read_extra_paths(model_type: str) -> list[str]:
 
 
 def _list_files(directory: str) -> list[dict]:
-    """List model files in a directory (non-recursive)."""
+    """List model files under a directory, recursing into subfolders.
+
+    ComfyUI references models in subfolders by their root-relative path
+    (e.g. "folder_a/x.safetensors"), so filename carries that relative path
+    with forward slashes to match what the workflow's lora_name expects.
+    """
     if not os.path.isdir(directory):
         return []
 
     files = []
-    for name in sorted(os.listdir(directory)):
-        _, ext = os.path.splitext(name)
-        if ext.lower() not in MODEL_EXTENSIONS:
-            continue
-        filepath = os.path.join(directory, name)
-        if not os.path.isfile(filepath):
-            continue
-        size_mb = round(os.path.getsize(filepath) / (1024 * 1024), 1)
-        files.append({
-            "filename": name,
-            "path": filepath,
-            "size_mb": size_mb,
-        })
+    for root, _dirs, names in os.walk(directory):
+        for name in names:
+            _, ext = os.path.splitext(name)
+            if ext.lower() not in MODEL_EXTENSIONS:
+                continue
+            filepath = os.path.join(root, name)
+            if not os.path.isfile(filepath):
+                continue
+            rel = os.path.relpath(filepath, directory).replace(os.sep, "/")
+            size_mb = round(os.path.getsize(filepath) / (1024 * 1024), 1)
+            files.append({
+                "filename": rel,
+                "path": filepath,
+                "size_mb": size_mb,
+            })
 
     return files
 
