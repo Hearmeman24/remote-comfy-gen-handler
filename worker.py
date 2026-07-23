@@ -113,16 +113,31 @@ MODEL_DIRS = [
 
 
 def _resolve_model_path(filename: str) -> str | None:
-    """Find a .safetensors file on the volume by walking model dirs."""
+    """Find a model file on the volume by walking model dirs.
+
+    Handles two ref shapes: a bare basename ("x.safetensors", legacy top-level)
+    and a subfolder-qualified path relative to a model-type dir
+    ("wan2.2/_accel/x.safetensors", after the loras reorg) — the form ComfyUI's
+    own lora_name uses. os.walk yields basenames, so the qualified path is
+    matched by comparing the file's path suffix, not the basename set.
+    """
+    filename = filename.replace("\\", "/")
+    has_sub = "/" in filename
+    base_name = filename.rsplit("/", 1)[-1]
     for base in MODEL_DIRS:
         if not os.path.isdir(base):
             continue
         for root, _dirs, files in os.walk(base):
-            if filename in files:
-                path = os.path.join(root, filename)
-                # Verify the file actually exists (catches broken symlinks)
-                if os.path.isfile(path):
-                    return path
+            if base_name not in files:
+                continue
+            path = os.path.join(root, base_name)
+            if not os.path.isfile(path):  # catches broken symlinks
+                continue
+            if not has_sub:
+                return path
+            rel = os.path.relpath(path, base).replace(os.sep, "/")
+            if rel == filename or rel.endswith("/" + filename):
+                return path
     return None
 
 
