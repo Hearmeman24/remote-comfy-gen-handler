@@ -42,6 +42,10 @@ if [ -f "$COMFYUI_DIR/extra_model_paths.yaml" ]; then
         sed -i '/^    vae:/i\    detection: detection' "$COMFYUI_DIR/extra_model_paths.yaml"
         echo "[start] Patched extra_model_paths.yaml with detection"
     fi
+    if ! grep -q "frame_interpolation:" "$COMFYUI_DIR/extra_model_paths.yaml"; then
+        sed -i '/^    vae:/i\    frame_interpolation: frame_interpolation' "$COMFYUI_DIR/extra_model_paths.yaml"
+        echo "[start] Patched extra_model_paths.yaml with frame_interpolation"
+    fi
     EXTRA_PATHS_FLAG="--extra-model-paths-config $COMFYUI_DIR/extra_model_paths.yaml"
     echo "[start] Using extra_model_paths.yaml for network volume models"
 fi
